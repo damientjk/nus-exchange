@@ -8,7 +8,7 @@ export default function ResultCard({ record }) {
   return (
     <div className="flex items-center gap-3.5 rounded-xl border border-border bg-white py-4 px-[18px] max-sm:items-start">
       <Link
-        to={`/mappings/${record._idx}`}
+        to={`/mappings/${record.id}`}
         className="flex min-w-0 flex-1 items-center gap-[18px] max-sm:flex-col max-sm:items-start max-sm:gap-2"
       >
         <div className="min-w-0 flex-1">

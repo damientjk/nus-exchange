@@ -1,30 +1,52 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useMappings } from '../hooks/useMappings.js';
+import { loadLegacyIds, useMappings } from '../hooks/useMappings.js';
 import { useStarred } from '../hooks/StarredContext.jsx';
 import ModuleCard from '../components/ModuleCard.jsx';
+import NusModsLink from '../components/NusModsLink.jsx';
+import OverseasCourseInfo from '../components/OverseasCourseInfo.jsx';
 import Loading from '../components/Loading.jsx';
 
+// Before mappings had ids, detail URLs used the record's array position.
+const LEGACY_IDX = /^\d{1,5}$/;
+
 export default function Detail() {
-  const { idx } = useParams();
-  const { records, loading } = useMappings();
+  const { id } = useParams();
+  const { records, error } = useMappings();
   const { isStarred, toggleStar } = useStarred();
   const navigate = useNavigate();
 
-  const rec = useMemo(
-    () => (records ? records.find((r) => r._idx === Number(idx)) : null),
-    [records, idx],
-  );
+  const rec = useMemo(() => (records ? records.find((r) => r.id === id) : null), [records, id]);
   const relatedAll = useMemo(
     () =>
       records && rec
-        ? records.filter((r) => r.partnerUni === rec.partnerUni && r._idx !== rec._idx)
+        ? records.filter((r) => r.partnerUni === rec.partnerUni && r.id !== rec.id)
         : [],
     [records, rec],
   );
   const related = relatedAll.slice(0, 6);
 
-  if (loading) return <Loading />;
+  const isLegacyLink = !!records && !rec && LEGACY_IDX.test(id);
+  const [legacyFailed, setLegacyFailed] = useState(false);
+  useEffect(() => {
+    if (!isLegacyLink) return;
+    let cancelled = false;
+    loadLegacyIds()
+      .then(({ idx }) => {
+        if (cancelled) return;
+        const newId = idx[Number(id)];
+        if (newId) navigate(`/mappings/${newId}`, { replace: true });
+        else setLegacyFailed(true);
+      })
+      .catch(() => {
+        if (!cancelled) setLegacyFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLegacyLink, id, navigate]);
+
+  if (!records || (isLegacyLink && !legacyFailed)) return <Loading error={error} />;
 
   if (!rec) {
     return (
@@ -45,18 +67,32 @@ export default function Detail() {
 
   const starred = isStarred(rec);
 
-  const nusCourses = [
-    { code: rec.nusCourse1, title: rec.nusCourse1Title, units: rec.nusCrse1Units },
-    ...(rec.nusCourse2
-      ? [{ code: rec.nusCourse2, title: rec.nusCourse2Title, units: rec.nusCrse2Units }]
-      : []),
-  ];
-  const puCourses = [
-    { code: rec.puCourse1, title: rec.puCourse1Title, units: rec.puCrse1Units },
-    ...(rec.puCourse2
-      ? [{ code: rec.puCourse2, title: rec.puCourse2Title, units: rec.puCrse2Units }]
-      : []),
-  ];
+  const nusCourses = ['1', '2']
+    .filter((n) => rec[`nusCourse${n}`])
+    .map((n) => ({
+      code: rec[`nusCourse${n}`],
+      title: rec[`nusCourse${n}Title`],
+      units: rec[`nusCrse${n}Units`],
+      extra: <NusModsLink code={rec[`nusCourse${n}`]} />,
+    }));
+  // a couple of overseas modules have a title but no code in the source data
+  const puCourses = ['1', '2']
+    .filter((n) => rec[`puCourse${n}`] || rec[`puCourse${n}Title`])
+    .map((n) => ({
+      code: rec[`puCourse${n}`],
+      title: rec[`puCourse${n}Title`],
+      units: rec[`puCrse${n}Units`],
+      extra: (
+        <OverseasCourseInfo
+          code={rec[`puCourse${n}`]}
+          title={rec[`puCourse${n}Title`]}
+          url={rec[`puCourse${n}Url`]}
+          lang={rec[`puCourse${n}Lang`]}
+          partnerUni={rec.partnerUni}
+          country={rec.country}
+        />
+      ),
+    }));
 
   return (
     <div className="mx-auto w-full max-w-[760px] px-6 pb-16 pt-10 max-sm:px-4">
@@ -121,8 +157,8 @@ export default function Detail() {
           {related.length ? (
             related.map((rel) => (
               <Link
-                key={rel._idx}
-                to={`/mappings/${rel._idx}`}
+                key={rel.id}
+                to={`/mappings/${rel.id}`}
                 className="flex items-center justify-between gap-3 rounded-[10px] border border-border bg-white px-4 py-3 hover:border-border-input"
               >
                 <div className="text-[13px] font-semibold">

@@ -19,7 +19,7 @@ export default function Header() {
           <NavLink to="/" end className={navLinkClass}>Home</NavLink>
           <NavLink to="/search" className={navLinkClass}>Search</NavLink>
           <NavLink to="/universities" className={navLinkClass}>Universities</NavLink>
-          <NavLink to="/mappings" className={navLinkClass}>
+          <NavLink to="/mappings" end className={navLinkClass}>
             <span className="max-sm:hidden">
               My Mappings{starredCount ? ` (${starredCount})` : ''}
             </span>

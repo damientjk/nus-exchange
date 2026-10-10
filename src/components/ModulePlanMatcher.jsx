@@ -118,7 +118,10 @@ export default function ModulePlanMatcher({ records }) {
                     className="flex items-center justify-between gap-3 rounded-xl border border-border px-[18px] py-[15px] hover:border-border-input max-sm:flex-col max-sm:items-start max-sm:gap-3"
                   >
                     <Link
-                      to={`/search?uni=${encodeURIComponent(r.partnerUni)}`}
+                      to={`/search?${new URLSearchParams([
+                        ['uni', r.partnerUni],
+                        ...r.matchedCodes.map((c) => ['module', c]),
+                      ])}`}
                       className="flex min-w-0 flex-1 items-center gap-3"
                     >
                       <div className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-accent-bg text-[11px] font-bold text-accent-hover">

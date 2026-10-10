@@ -7,7 +7,7 @@ import WorldMap from '../components/WorldMap.jsx';
 import Loading from '../components/Loading.jsx';
 
 export default function Browse() {
-  const { records, loading } = useMappings();
+  const { records, error } = useMappings();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const query = params.get('q') || '';
@@ -59,7 +59,7 @@ export default function Browse() {
     setParams(next, { replace: true });
   }
 
-  if (loading) return <Loading />;
+  if (!records) return <Loading error={error} />;
 
   return (
     <div className="mx-auto w-full max-w-[920px] px-6 pb-16 pt-12 max-sm:px-4">

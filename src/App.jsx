@@ -18,7 +18,7 @@ export default function App() {
           <Route path="/search" element={<Search />} />
           <Route path="/universities" element={<Browse />} />
           <Route path="/mappings" element={<Saved />} />
-          <Route path="/mappings/:idx" element={<Detail />} />
+          <Route path="/mappings/:id" element={<Detail />} />
         </Routes>
       </div>
       <Analytics />

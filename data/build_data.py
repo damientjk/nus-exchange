@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Parses data/exchange-mappings.xlsx into modules-data.js for the site.
+"""Parses data/exchange-mappings.xlsx into public/modules-data.json for the site.
 Run: python3 data/build_data.py
+
+Verified overseas course-page links and teaching languages come from
+data/course-pages.json, which data/check_course_pages.py maintains.
 """
+import hashlib
 import json
 import openpyxl
 from pathlib import Path
 
 SRC = Path(__file__).parent / "exchange-mappings.xlsx"
 OUT = Path(__file__).parent.parent / "public" / "modules-data.json"
+COURSE_PAGES = Path(__file__).parent / "course-pages.json"
 
 FACULTY_NAMES = {
     "CDE": "College of Design and Engineering",
@@ -16,6 +21,20 @@ FACULTY_NAMES = {
     "FOS": "Faculty of Science",
     "SOC": "School of Computing",
     "MISC": "Other Programmes",
+}
+
+# The workbook spells some universities two ways; fold them into one name so
+# their mappings aren't split across two entries.
+UNI_ALIASES = {
+    "Aachen University of Technology": "RWTH Aachen University",
+    "Swiss Federal Institute of Technology Lausanne": "Ecole Polytechnique Federale de Lausanne (EPFL)",
+    "University of Goteborg": "University of Gothenburg",
+}
+
+# Text the workbook already lost to a bad encoding round-trip.
+MOJIBAKE = {
+    "Europ\ufffd\ufffdenne": "Europ\u00e9enne",
+    "\ufffd\ufffd\ufffd": "\u2019",
 }
 
 # partnerUni (raw, as it appears in the source workbook) -> country
@@ -384,7 +403,7 @@ COUNTRY = {
 
 
 def clean_uni_name(raw: str) -> str:
-    name = raw.strip()
+    name = UNI_ALIASES.get(raw.strip(), raw.strip())
     if name.endswith(", The"):
         name = "The " + name[: -len(", The")]
     name = name.replace(",Seoul", ", Seoul").replace(",Kyoto", ", Kyoto")
@@ -404,51 +423,111 @@ def to_units(v):
 def to_str(v):
     if v is None:
         return ""
-    return str(v).strip()
+    if isinstance(v, float) and v == int(v):
+        # Excel stores all-digit course codes as numbers; 2393.0 should read 2393
+        v = int(v)
+    s = str(v).strip()
+    for bad, good in MOJIBAKE.items():
+        s = s.replace(bad, good)
+    return s
+
+
+def course_code(v, partner):
+    code = to_str(v)
+    if partner == "Technical University of Denmark" and code.lstrip("-").isdigit():
+        # DTU codes are five digits; Excel dropped the leading zeros (02393 -> 2393)
+        # and a few cells picked up a stray minus sign
+        code = code.lstrip("-").zfill(5)
+    return code
+
+
+def mapping_id(r):
+    """Stable id for a mapping: a hash of what it maps, so detail-page URLs
+    survive a data rebuild. Titles and units are left out so fixing a typo in
+    the workbook doesn't change the id."""
+    parts = [r["faculty"], r["partnerUni"], r["puCourse1"], r["puCourse2"], r["nusCourse1"], r["nusCourse2"]]
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:10]
+
+
+def load_course_pages():
+    if not COURSE_PAGES.exists():
+        return {}
+    return json.loads(COURSE_PAGES.read_text(encoding="utf-8"))
+
+
+def read_rows(wb):
+    """Yields (faculty_name, raw partner name, row) for every non-empty row."""
+    for sheet_key, faculty_name in FACULTY_NAMES.items():
+        for row in wb[sheet_key].iter_rows(min_row=2, values_only=True):
+            partner_raw = to_str(row[1])
+            if partner_raw:
+                yield faculty_name, partner_raw, row
+
+
+def build_record(faculty_name, partner_raw, row):
+    partner = clean_uni_name(partner_raw)
+    return {
+        "faculty": faculty_name,
+        "partnerUni": partner,
+        "country": COUNTRY.get(partner_raw, "Other"),
+        "puCourse1": course_code(row[2], partner_raw),
+        "puCourse1Title": to_str(row[3]),
+        "puCrse1Units": to_units(row[4]),
+        "puCourse2": course_code(row[5], partner_raw),
+        "puCourse2Title": to_str(row[6]),
+        "puCrse2Units": to_units(row[7]),
+        "nusCourse1": to_str(row[8]).upper(),
+        "nusCourse1Title": to_str(row[9]),
+        "nusCrse1Units": to_units(row[10]),
+        "nusCourse2": to_str(row[11]).upper(),
+        "nusCourse2Title": to_str(row[12]),
+        "nusCrse2Units": to_units(row[13]),
+    }
 
 
 def main():
     wb = openpyxl.load_workbook(SRC, data_only=True)
+    course_pages = load_course_pages()
     records = []
+    by_id = {}
     missing_countries = set()
+    dropped = 0
 
-    for sheet_key, faculty_name in FACULTY_NAMES.items():
-        ws = wb[sheet_key]
-        rows = ws.iter_rows(min_row=2, values_only=True)
-        for row in rows:
-            partner_raw = to_str(row[1])
-            if not partner_raw:
-                continue
-            country = COUNTRY.get(partner_raw)
-            if country is None:
-                missing_countries.add(partner_raw)
-                country = "Other"
-            records.append({
-                "faculty": faculty_name,
-                "partnerUni": clean_uni_name(partner_raw),
-                "country": country,
-                "puCourse1": to_str(row[2]),
-                "puCourse1Title": to_str(row[3]),
-                "puCrse1Units": to_units(row[4]),
-                "puCourse2": to_str(row[5]),
-                "puCourse2Title": to_str(row[6]),
-                "puCrse2Units": to_units(row[7]),
-                "nusCourse1": to_str(row[8]),
-                "nusCourse1Title": to_str(row[9]),
-                "nusCrse1Units": to_units(row[10]),
-                "nusCourse2": to_str(row[11]),
-                "nusCourse2Title": to_str(row[12]),
-                "nusCrse2Units": to_units(row[13]),
-            })
+    for faculty_name, partner_raw, row in read_rows(wb):
+        if partner_raw not in COUNTRY:
+            missing_countries.add(partner_raw)
+        r = build_record(faculty_name, partner_raw, row)
+        if not r["nusCourse1"] and not r["nusCourse2"]:
+            dropped += 1  # nothing on the NUS side to map to
+            continue
+        r["id"] = mapping_id(r)
+        if r["id"] in by_id:
+            # the workbook lists some mappings twice; keep the first, filling
+            # in anything it left blank
+            first = by_id[r["id"]]
+            for k, v in r.items():
+                if v and not first[k]:
+                    first[k] = v
+            dropped += 1
+            continue
+        by_id[r["id"]] = r
+        for n in ("1", "2"):
+            page = course_pages.get(f"{r['partnerUni']}|{r['puCourse' + n]}")
+            if page:
+                r[f"puCourse{n}Url"] = page["url"]
+                if page.get("lang"):
+                    r[f"puCourse{n}Lang"] = page["lang"]
+        records.append(r)
 
     if missing_countries:
         print("WARNING: missing country mapping for:", sorted(missing_countries))
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(records, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"wrote {len(records)} records to {OUT}")
+    print(f"wrote {len(records)} records to {OUT} ({dropped} empty or duplicate rows dropped)")
     print(f"universities: {len(set(r['partnerUni'] for r in records))}")
     print(f"countries: {len(set(r['country'] for r in records))}")
+    print(f"verified overseas course pages: {sum(1 for r in records if r.get('puCourse1Url'))}")
 
 
 if __name__ == "__main__":
