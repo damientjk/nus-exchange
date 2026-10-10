@@ -1,4 +1,4 @@
 {
   "installCommand": "pnpm install --frozen-lockfile",
-  "rewrites": [{ "source": "/((?!_vercel|assets|modules-data.json).*)", "destination": "/index.html" }]
+  "rewrites": [{ "source": "/((?!_vercel|assets|modules-data.json|legacy-ids.json|world-110m.json|ads.txt).*)", "destination": "/index.html" }]
 }

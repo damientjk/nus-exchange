@@ -5,7 +5,7 @@ import { computeStats, groupByCountry } from '../lib/mappings.js';
 import Loading from '../components/Loading.jsx';
 
 export default function Home() {
-  const { records, loading } = useMappings();
+  const { records, error } = useMappings();
   const [homeQuery, setHomeQuery] = useState('');
   const navigate = useNavigate();
 
@@ -20,7 +20,7 @@ export default function Home() {
     navigate(`/search${params}`);
   }
 
-  if (loading) return <Loading />;
+  if (!records) return <Loading error={error} />;
 
   return (
     <div className="flex flex-1 flex-col items-center px-6 pb-16 pt-[88px] max-sm:px-4 max-sm:pb-12 max-sm:pt-14">

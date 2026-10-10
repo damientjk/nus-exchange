@@ -12,7 +12,7 @@ const SORT_OPTIONS = [
 ];
 
 export default function Saved() {
-  const { records, loading } = useMappings();
+  const { records, error } = useMappings();
   const { isStarred } = useStarred();
   const navigate = useNavigate();
   const [sortBy, setSortBy] = useState('university');
@@ -27,7 +27,7 @@ export default function Saved() {
     );
   }, [records, isStarred, sortBy]);
 
-  if (loading) return <Loading />;
+  if (!records) return <Loading error={error} />;
 
   return (
     <div className="mx-auto w-full max-w-[920px] px-6 pb-16 pt-12 max-sm:px-4">
@@ -63,7 +63,7 @@ export default function Saved() {
       </div>
       <div className="flex flex-col gap-2.5">
         {savedResults.length ? (
-          savedResults.map((r) => <ResultCard key={r._idx} record={r} />)
+          savedResults.map((r) => <ResultCard key={r.id} record={r} />)
         ) : (
           <div className="flex flex-col items-center gap-3.5 px-5 py-20 text-center text-sm text-muted-3">
             <div className="text-[28px]">☆</div>

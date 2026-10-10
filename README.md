@@ -8,13 +8,16 @@ countries.
 
 ## Features
 
-- **Search** by NUS course code, module title, or university, with faculty and NUS
-  module-prefix filters (e.g. `EE`, `ME`, `CS`), all reflected in the URL so results are
+- **Search** by course code, module title, or university, and narrow by any mix of
+  countries, universities and NUS modules (pick several of each), plus faculty and NUS
+  module-prefix filters (e.g. `EE`, `ME`, `CS`). All of it lives in the URL, so results are
   shareable/bookmarkable.
 - **Browse** partner universities grouped by country.
 - **Detail view** for each mapping, correctly showing combined mappings (e.g. two overseas
   modules bundling into one NUS module, or vice versa) rather than implying two separate 1:1
-  pairs.
+  pairs. Each NUS module links to NUSMods (checked live against the NUSMods API), each overseas
+  module links to its official course page where one was found, and shows whether it's taught
+  in English.
 - **My Mappings** — star mappings to save them, persisted in `localStorage`.
 - Infinite scroll on search results (loads 100 at a time).
 
@@ -43,8 +46,12 @@ src/
 data/
   exchange-mappings.xlsx  source workbook (official NUS module-mapping data)
   build_data.py           parses it into public/modules-data.json
+  check_course_pages.py   finds and verifies overseas course pages -> course-pages.json
+  course-pages.json       verified course-page links and teaching languages (generated)
+  make_legacy_ids.py      one-off: maps pre-id links and stars to ids
 public/
   modules-data.json       generated dataset, fetched by the app at runtime
+  legacy-ids.json         old /mappings/<index> links and stars -> ids, fetched only when needed
 ```
 
 ## Updating the data
@@ -57,7 +64,30 @@ pip3 install openpyxl
 pnpm build-data
 ```
 
+Each mapping gets a stable `id`, a hash of its faculty, university and course codes, which is
+what detail-page URLs and stars use, so rebuilding the data doesn't break saved links.
+
 Partner university → country is a hand-maintained lookup in `data/build_data.py` (the source
 workbook doesn't include country). If a new partner university shows up in the workbook, the
 script will still include its mappings but log a `WARNING: missing country mapping for: [...]`
 — add it to the `COUNTRY` dict in that file.
+
+### Overseas course pages and teaching language
+
+The workbook has no links to overseas course pages, so `data/check_course_pages.py` builds
+them for universities whose catalogue has a predictable per-course URL (KTH, Lund, Linköping,
+Monash, Sydney, UQ, ANU, UNSW, UCD, Georgia Tech, UNC, UIUC). It fetches every candidate URL and
+keeps only the ones that really are a course page, reading the teaching language off the page
+where the catalogue states it. Results are cached in `data/course-pages.json`, so a rerun only
+checks codes that are new. To add a university, add an entry to `SITES` in that script.
+
+```
+pip3 install openpyxl certifi
+python3 data/check_course_pages.py   # add --recheck to check everything again
+pnpm build-data
+```
+
+Where no course page states the language, the site falls back to the university as a whole
+(`src/lib/language.js`): English-medium countries and a short list of English-medium
+universities show as taught in English, Hong Kong as usually English, and everywhere else as
+"check the course page".
