@@ -3,7 +3,7 @@
 website to help students map mods for exchange bc edurec SUCKSSSS
 
 Search real, previously-approved NUS exchange module mappings across partner universities
-before you plan your application — 16,000+ mappings across 360 partner universities in 44
+before you plan your application — 21,000+ mappings across 374 partner universities in 45
 countries.
 
 ## Features
@@ -45,7 +45,11 @@ src/
   lib/         filtering, grouping, and stats helpers over the dataset
 data/
   exchange-mappings.xlsx  source workbook (official NUS module-mapping data)
-  build_data.py           parses it into public/modules-data.json
+  EduRec Scrape 2026.xlsx mappings scraped from EduRec in Oct 2026, same columns plus faculty
+  *.pdf                   departments' lists of previously approved mappings
+  extract_pdf_mappings.py turns those PDFs into approved-lists/*.csv
+  approved-lists/         the PDFs' mappings as CSV (generated, committed)
+  build_data.py           merges all of the above into public/modules-data.json
   check_course_pages.py   finds and verifies overseas course pages -> course-pages.json
   course-pages.json       verified course-page links and teaching languages (generated)
   make_legacy_ids.py      one-off: maps pre-id links and stars to ids
@@ -71,6 +75,36 @@ Partner university → country is a hand-maintained lookup in `data/build_data.p
 workbook doesn't include country). If a new partner university shows up in the workbook, the
 script will still include its mappings but log a `WARNING: missing country mapping for: [...]`
 — add it to the `COUNTRY` dict in that file.
+
+### Sources
+
+Mappings come from four sources: the original workbook, the EduRec scrape, and the Psychology
+and Faculty of Science approved-mapping PDFs. A mapping in more than one (same university and
+course codes, whatever the faculty) becomes a single record whose `sources` lists all of them in
+the order of `SOURCE_PRIORITY` in `build_data.py` (Psych, FOS, original, EduRec). The site
+labels each mapping with the first, using `src/lib/sources.js`. The record's details (titles,
+units) come from the first source read, which is the original workbook, then EduRec, then the
+PDFs, so units are kept where any source has them.
+
+### Departments' approved-mapping lists
+
+Some departments publish their own PDF lists of previously approved mappings, which cover
+mappings the workbook doesn't (e.g. Psychology, which the workbook has none of). These come in
+as CSVs in `data/approved-lists/`, one per PDF, which `build_data.py` merges in:
+
+```
+pip3 install pdfplumber certifi
+python3 data/extract_pdf_mappings.py   # PDFs -> data/approved-lists/*.csv
+pnpm build-data
+```
+
+The extract script renames universities to the workbook's spelling (`UNI_NAMES`), fixes text
+the PDFs spilled from long titles into the NUS code column, and fills NUS titles the PDFs leave
+out from NUSMods.
+
+To add a new PDF: put it in `data/`, add it to `SOURCES` in `extract_pdf_mappings.py` and to
+`APPROVED_LISTS` and `SOURCE_PRIORITY` in `build_data.py`, add a label to `src/lib/sources.js`, and
+map any unfamiliar university names in `UNI_NAMES` (or add new universities to `COUNTRY`).
 
 ### Overseas course pages and teaching language
 

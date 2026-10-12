@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useStarred } from '../hooks/StarredContext.jsx';
+import { sourceLabel } from '../lib/sources.js';
 
 export default function ResultCard({ record }) {
   const { isStarred, toggleStar } = useStarred();
@@ -21,7 +22,11 @@ export default function ResultCard({ record }) {
             )}
             <span className="text-[13px] text-muted">{record.nusCourse1Title}</span>
           </div>
-          <div className="mt-1 text-xs text-muted-3">{record.nusCrse1Units} NUS units</div>
+          <div className="mt-1 text-xs text-muted-3">
+            {[record.nusCrse1Units > 0 && `${record.nusCrse1Units} NUS units`, sourceLabel(record)]
+              .filter(Boolean)
+              .join(' · ')}
+          </div>
         </div>
         <div className="flex-none text-[15px] text-border-input max-sm:hidden">⇄</div>
         <div className="min-w-0 flex-1 text-right max-sm:text-left">

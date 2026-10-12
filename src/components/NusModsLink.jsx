@@ -27,7 +27,23 @@ async function findOnNusMods(code) {
 
 const linkClass = 'font-semibold text-accent hover:text-accent-hover';
 
+// Department lists use codes like PL37XX for "some Level-3000 PL course".
+const DUMMY_CODE = /^([A-Z]+)(\d)\dXX$/;
+
 export default function NusModsLink({ code }) {
+  const dummy = code.match(DUMMY_CODE);
+  if (dummy) {
+    return (
+      <span className="text-muted-3">
+        A placeholder, not a real course: this counts as an unspecified Level-{dummy[2]}000{' '}
+        {dummy[1]} course.
+      </span>
+    );
+  }
+  return <NusModsLookup code={code} />;
+}
+
+function NusModsLookup({ code }) {
   // 'checking' | 'found' | 'missing' | 'unreachable'
   const [state, setState] = useState(() =>
     found.has(code) ? (found.get(code) ? 'found' : 'missing') : 'checking',
