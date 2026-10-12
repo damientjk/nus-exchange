@@ -189,6 +189,7 @@ export const COUNTRY_CONTINENT = {
   'United States': 'North America',
   'Czech Republic': 'Europe',
   'Hong Kong': 'Asia',
+  Macau: 'Asia',
   Singapore: 'Asia',
 };
 

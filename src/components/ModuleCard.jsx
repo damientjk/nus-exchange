@@ -11,7 +11,7 @@ export default function ModuleCard({ label, courses }) {
             {i > 0 && <div className="mb-3 text-xs font-bold text-muted-3">+</div>}
             <div className="text-[19px] font-extrabold text-ink">{c.code || 'No code listed'}</div>
             <div className="mt-1 text-sm leading-snug text-[#4a453d]">{c.title}</div>
-            <div className="mt-1 text-[12.5px] text-muted-2">{c.units} units</div>
+            {c.units > 0 && <div className="mt-1 text-[12.5px] text-muted-2">{c.units} units</div>}
             {c.extra && (
               <div className="mt-3 flex flex-col gap-2 border-t border-border pt-3 text-[12.5px] leading-snug">
                 {c.extra}

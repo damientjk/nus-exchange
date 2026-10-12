@@ -1,18 +1,51 @@
 #!/usr/bin/env python3
-"""Parses data/exchange-mappings.xlsx into public/modules-data.json for the site.
+"""Builds public/modules-data.json for the site from every mapping source:
+  - data/exchange-mappings.xlsx, the original list
+  - data/EduRec Scrape 2026.xlsx, scraped from EduRec in Oct 2026
+  - the departments' lists of previously approved mappings, which
+    data/extract_pdf_mappings.py turns from PDFs into data/approved-lists/*.csv
+A mapping found in several sources becomes one record that lists them all in
+`sources`, highest SOURCE_PRIORITY first; src/lib/sources.js labels them on
+the site.
 Run: python3 data/build_data.py
 
 Verified overseas course-page links and teaching languages come from
 data/course-pages.json, which data/check_course_pages.py maintains.
 """
+import csv
 import hashlib
 import json
+import re
+
 import openpyxl
 from pathlib import Path
 
 SRC = Path(__file__).parent / "exchange-mappings.xlsx"
 OUT = Path(__file__).parent.parent / "public" / "modules-data.json"
 COURSE_PAGES = Path(__file__).parent / "course-pages.json"
+EDUREC = Path(__file__).parent / "EduRec Scrape 2026.xlsx"
+APPROVED_LISTS_DIR = Path(__file__).parent / "approved-lists"
+
+# approved-list CSV -> faculty. The CSV's name (minus .csv) is its source key.
+APPROVED_LISTS = {
+    "psych-2026.csv": "Faculty of Arts & Social Sciences",
+    "fos-2026.csv": "Faculty of Science",
+}
+
+# Where a mapping is in several sources, the site labels it with the first of
+# these that has it, so `sources` is kept in this order.
+SOURCE_PRIORITY = ["psych-2026", "fos-2026", "original", "edurec-2026-10"]
+
+# EduRec cuts faculty names short. Rows with no faculty are all architecture
+# and built-environment courses (AR, PF, UD, LA), so they're CDE's.
+EDUREC_FACULTIES = {
+    "College of Design and Eng": "College of Design and Engineering",
+    "Faculty of Arts & Social Sci": "Faculty of Arts & Social Sciences",
+    "Faculty of Science": "Faculty of Science",
+    "NUS Business School": "NUS Business School",
+    "School of Computing": "School of Computing",
+    None: "College of Design and Engineering",
+}
 
 FACULTY_NAMES = {
     "CDE": "College of Design and Engineering",
@@ -45,8 +78,12 @@ COUNTRY = {
 "Aalto University, Mikkeli": "Finland",
 "Aarhus School of Business": "Denmark",
 "Aarhus University": "Denmark",
+"Amherst College": "United States",
 "Amsterdam University College": "Netherlands",
 "Arizona State University": "United States",
+"Ashoka University": "India",
+"Asia University": "Taiwan",
+"Ateneo de Manila University": "Philippines",
 "Athens University of Economics & Business": "Greece",
 "Australian National University, The": "Australia",
 "BI Norwegian Business School": "Norway",
@@ -108,9 +145,11 @@ COUNTRY = {
 "Georgia Institute of Technology": "United States",
 "Grenoble Institute of Technology (Grenoble INP)": "France",
 "HEC Montreal": "Canada",
+"HU University of Applied Sciences Utrecht": "Netherlands",
 "Hamburg University of Technology": "Germany",
 "Hankuk University of Foreign Studies": "South Korea",
 "Hanyang University": "South Korea",
+"Harvard University": "United States",
 "Hautes Etudes Commerciales (HEC) Paris": "France",
 "Hebrew University of Jerusalem, The": "Israel",
 "Heidelberg University": "Germany",
@@ -122,9 +161,11 @@ COUNTRY = {
 "IE Business School": "Spain",
 "INSA Lyon": "France",
 "Imperial College London": "United Kingdom",
+"Indian Institute of Technology, Bombay": "India",
 "Indiana University, Bloomington": "United States",
 "Institut d'Etudes Politiques de Grenoble": "France",
 "Institute of Science Tokyo": "Japan",
+"International Christian University": "Japan",
 "Iowa State University": "United States",
 "Istanbul Aydin University": "Turkey",
 "Jagiellonian University": "Poland",
@@ -212,7 +253,9 @@ COUNTRY = {
 "Renmin University of China": "China",
 "Rice University": "United States",
 "Richard Ivey Sch of Biz, Univ of Western Ontario": "Canada",
+"Rikkyo University": "Japan",
 "Ritsumeikan University,Kyoto": "Japan",
+"Rotterdam School of Management": "Netherlands",
 "Sabanci University": "Turkey",
 "San Francisco State University": "United States",
 "Sciences Po Paris": "France",
@@ -267,7 +310,9 @@ COUNTRY = {
 "University College Dublin": "Ireland",
 "University College London": "United Kingdom",
 "University College Utrecht": "Netherlands",
+"University Medical Center Utrecht": "Netherlands",
 "University of Aberdeen": "United Kingdom",
+"University of Alaska, Fairbanks": "United States",
 "University of Alberta": "Canada",
 "University of Amsterdam": "Netherlands",
 "University of Antwerp": "Belgium",
@@ -321,10 +366,12 @@ COUNTRY = {
 "University of Illinois Urbana-Champaign": "United States",
 "University of Innsbruck": "Austria",
 "University of Kaiserslautern, FRG": "Germany",
+"University of Kansas": "United States",
 "University of Konstanz": "Germany",
 "University of Lausanne": "Switzerland",
 "University of Leeds": "United Kingdom",
 "University of Liverpool": "United Kingdom",
+"University of Macau": "Macau",
 "University of Manchester, The": "United Kingdom",
 "University of Mannheim": "Germany",
 "University of Maryland": "United States",
@@ -367,6 +414,7 @@ COUNTRY = {
 "University of Toronto": "Canada",
 "University of Toronto (Mississauga)": "Canada",
 "University of Toronto (Scarborough)": "Canada",
+"University of Tubingen": "Germany",
 "University of Victoria": "Canada",
 "University of Virginia": "United States",
 "University of Warwick": "United Kingdom",
@@ -380,6 +428,7 @@ COUNTRY = {
 "University of Zurich": "Switzerland",
 "University of the Republic, Uruguay": "Uruguay",
 "Uppsala University": "Sweden",
+"Utrecht Summer School": "Netherlands",
 "Utrecht University": "Netherlands",
 "Vanderbilt University": "United States",
 "Vassar College": "United States",
@@ -392,6 +441,7 @@ COUNTRY = {
 "Warsaw School of Economics": "Poland",
 "Warsaw University of Technology": "Poland",
 "Waseda University": "Japan",
+"Wellesley College": "United States",
 "Western University": "Canada",
 "William & Mary": "United States",
 "Xiamen University": "China",
@@ -485,6 +535,54 @@ def build_record(faculty_name, partner_raw, row):
     }
 
 
+def read_edurec():
+    """Yields (faculty_name, raw partner name, row, source) for every EduRec
+    mapping. Its columns are the workbook's with the faculty in place of the
+    first, so the rows read the same way after dropping the partner id."""
+    wb = openpyxl.load_workbook(EDUREC, read_only=True, data_only=True)
+    for row in wb["Mappings"].iter_rows(min_row=2, values_only=True):
+        partner_raw = to_str(row[2])
+        if partner_raw:
+            faculty = EDUREC_FACULTIES[row[1]]
+            yield faculty, partner_raw, row[1:], "edurec-2026-10"
+
+
+def read_approved_lists():
+    """Yields (faculty_name, raw partner name, row, source) for every approved-list
+    mapping, with row laid out like a workbook row so build_record reads it."""
+    for csv_name, faculty_name in APPROVED_LISTS.items():
+        with open(APPROVED_LISTS_DIR / csv_name, newline="", encoding="utf-8") as f:
+            for m in csv.DictReader(f):
+                row = [None, m["partnerUni"], m["puCourse"], m["puCourseTitle"], None, None, None, None,
+                       m["nusCourse"], m["nusCourseTitle"], None, None, None, None]
+                yield faculty_name, m["partnerUni"], row, csv_name.removesuffix(".csv")
+
+
+def match_key(r):
+    """What makes mappings from two sources the same: same university and
+    course codes, ignoring the faculty (sources don't agree on it) and spacing
+    and case in overseas codes (the PDFs write "CAS MA213" as "CASMA213")."""
+    pu = [re.sub(r"\s", "", r[k]).upper() for k in ("puCourse1", "puCourse2")]
+    return (r["partnerUni"], *pu, r["nusCourse1"], r["nusCourse2"])
+
+
+def fill_truncated_titles(records):
+    """EduRec cuts NUS titles to 30 characters. Where another record has the
+    full title for the same code, use it."""
+    full = {}
+    for r in records:
+        for n in ("1", "2"):
+            code, title = r[f"nusCourse{n}"], r[f"nusCourse{n}Title"]
+            if len(title) > len(full.get(code, "")):
+                full[code] = title
+    for r in records:
+        for n in ("1", "2"):
+            code, title = r[f"nusCourse{n}"], r[f"nusCourse{n}Title"]
+            longest = full.get(code, "")
+            if longest.lower().startswith(title.lower()):
+                r[f"nusCourse{n}Title"] = longest
+
+
 def main():
     wb = openpyxl.load_workbook(SRC, data_only=True)
     course_pages = load_course_pages()
@@ -493,7 +591,13 @@ def main():
     missing_countries = set()
     dropped = 0
 
-    for faculty_name, partner_raw, row in read_rows(wb):
+    by_key = {}
+    from_source = {}
+    rows = [(f, p, row, "original") for f, p, row in read_rows(wb)]
+    rows += read_edurec()
+    rows += read_approved_lists()
+
+    for faculty_name, partner_raw, row, source in rows:
         if partner_raw not in COUNTRY:
             missing_countries.add(partner_raw)
         r = build_record(faculty_name, partner_raw, row)
@@ -501,16 +605,24 @@ def main():
             dropped += 1  # nothing on the NUS side to map to
             continue
         r["id"] = mapping_id(r)
-        if r["id"] in by_id:
-            # the workbook lists some mappings twice; keep the first, filling
-            # in anything it left blank
-            first = by_id[r["id"]]
+        # The same mapping again: either the same faculty's (the original list
+        # lists some twice), or another source's under any faculty. Keep the
+        # first, filling in anything it left blank, and note the source.
+        first = by_id.get(r["id"]) or next(
+            (c for c in by_key.get(match_key(r), []) if source not in c["sources"]), None
+        )
+        if first:
             for k, v in r.items():
                 if v and not first[k]:
                     first[k] = v
+            if source not in first["sources"]:
+                first["sources"].append(source)
             dropped += 1
             continue
+        r["sources"] = [source]
         by_id[r["id"]] = r
+        by_key.setdefault(match_key(r), []).append(r)
+        from_source[source] = from_source.get(source, 0) + 1
         for n in ("1", "2"):
             page = course_pages.get(f"{r['partnerUni']}|{r['puCourse' + n]}")
             if page:
@@ -518,6 +630,9 @@ def main():
                 if page.get("lang"):
                     r[f"puCourse{n}Lang"] = page["lang"]
         records.append(r)
+    fill_truncated_titles(records)
+    for r in records:
+        r["sources"].sort(key=SOURCE_PRIORITY.index)
 
     if missing_countries:
         print("WARNING: missing country mapping for:", sorted(missing_countries))
@@ -525,6 +640,8 @@ def main():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(records, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"wrote {len(records)} records to {OUT} ({dropped} empty or duplicate rows dropped)")
+    for source, n in from_source.items():
+        print(f"  {n} first found in {source}")
     print(f"universities: {len(set(r['partnerUni'] for r in records))}")
     print(f"countries: {len(set(r['country'] for r in records))}")
     print(f"verified overseas course pages: {sum(1 for r in records if r.get('puCourse1Url'))}")

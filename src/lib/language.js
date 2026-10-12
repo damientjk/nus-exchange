@@ -25,6 +25,7 @@ const UNIVERSITY_LANGUAGE = {
   'Koc University': { status: 'yes', note: 'teaches in English' },
   'Sabanci University': { status: 'yes', note: 'teaches in English' },
   'University College Utrecht': { status: 'yes', note: 'teaches all its courses in English' },
+  'University of Macau': { status: 'yes', note: 'teaches mainly in English' },
   'HEC Montreal': {
     status: 'unknown',
     note: 'teaches mainly in French, with some courses in English',

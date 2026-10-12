@@ -6,6 +6,7 @@ import ModuleCard from '../components/ModuleCard.jsx';
 import NusModsLink from '../components/NusModsLink.jsx';
 import OverseasCourseInfo from '../components/OverseasCourseInfo.jsx';
 import Loading from '../components/Loading.jsx';
+import { SOURCES } from '../lib/sources.js';
 
 // Before mappings had ids, detail URLs used the record's array position.
 const LEGACY_IDX = /^\d{1,5}$/;
@@ -138,6 +139,16 @@ export default function Detail() {
           ⇄
         </div>
         <ModuleCard label="Overseas module" courses={puCourses} />
+      </div>
+
+      <div className="mt-3.5 text-[12.5px] leading-snug text-muted-2">
+        {rec.sources?.length > 0 && (
+          <>
+            Source: {rec.sources.map((s) => SOURCES[s]?.full || s).join('; also in ')}.{' '}
+          </>
+        )}
+        {!rec.nusCrse1Units &&
+          "This source doesn't list units, so check how many transfer with your faculty."}
       </div>
 
       <div className="mt-10">
